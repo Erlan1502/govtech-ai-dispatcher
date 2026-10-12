@@ -7,12 +7,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
       POSTGRES_DB: ${POSTGRES_DB:-govtech_db}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - '${POSTGRES_PORT:-5432}:5432'
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres}']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,7 +21,7 @@ services:
     image: ollama/ollama:latest
     container_name: govtech_ollama
     ports:
-      - "11434:11434"
+      - '11434:11434'
     volumes:
       - ollama_models:/root/.ollama
     restart: unless-stopped
@@ -37,7 +37,7 @@ services:
     image: n8nio/n8n:latest
     container_name: govtech_n8n
     ports:
-      - "${N8N_PORT:-5678}:5678"
+      - '${N8N_PORT:-5678}:5678'
     environment:
       - N8N_HOST=localhost
       - N8N_PORT=5678
