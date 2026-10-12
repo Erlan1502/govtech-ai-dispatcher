@@ -39,10 +39,10 @@ services:
     ports:
       - '${N8N_PORT:-5678}:5678'
     environment:
-      - N8N_HOST=localhost
+      - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
+      - WEBHOOK_URL=https://dont-canberra-hop-engaged.trycloudflare.com
       - N8N_PROTOCOL=http
-      - WEBHOOK_URL=http://localhost:5678/
       - GENERIC_TIMEZONE=Asia/Almaty
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - LLM_BASE_URL=${LLM_BASE_URL}
