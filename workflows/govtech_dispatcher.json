@@ -2,31 +2,17 @@
   "name": "My workflow",
   "nodes": [
     {
-      "parameters": {},
-      "type": "n8n-nodes-base.manualTrigger",
-      "typeVersion": 1,
-      "position": [
-        0,
-        0
-      ],
-      "id": "d8fac0ee-1be6-4d58-8ea7-0e264468ad7e",
-      "name": "When clicking ‘Execute workflow’"
-    },
-    {
       "parameters": {
         "method": "POST",
         "url": "http://ollama:11434/api/chat",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"qwen3.5:9b\",\n  \"stream\": false,\n  \"format\": \"json\",\n  \"options\": {\n    \"temperature\": 0\n  },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Ты — AI-диспетчер обращений граждан и бизнеса в GovTech-системе Республики Казахстан. Твоя задача — классифицировать обращение и вернуть СТРОГО валидный JSON следующей структуры:\\n{\\n  \\\"category\\\": \\\"TECHNICAL_FAILURE\\\" | \\\"CONSULTATION\\\" | \\\"COMPLAINT\\\" | \\\"CORRUPTION_ALERT\\\" | \\\"UNKNOWN\\\",\\n  \\\"urgency\\\": \\\"LOW\\\" | \\\"MEDIUM\\\" | \\\"HIGH\\\" | \\\"CRITICAL\\\",\\n  \\\"requires_human\\\": true | false,\\n  \\\"confidence\\\": число от 0.0 до 1.0,\\n  \\\"detected_language\\\": \\\"ru\\\" | \\\"kz\\\",\\n  \\\"summary\\\": \\\"краткая суть проблемы (1 предложение)\\\"\\n}\\nПравила:\\n1. При системных сбоях (NCALayer, ЭЦП, падение сервисов) ставь category=\\\"TECHNICAL_FAILURE\\\", urgency=\\\"HIGH\\\" или \\\"CRITICAL\\\", requires_human=true.\\n2. Любые подозрения на взятки, угрозы или жалобы на сотрудников — category=\\\"CORRUPTION_ALERT\\\" или \\\"COMPLAINT\\\", requires_human=true.\\n3. Не добавляй никаких вступительных слов, только чистый JSON.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Обращение пользователя: {{ $json.masked_text }}\"\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"model\": \"qwen3.5:9b\",\n  \"stream\": false,\n  \"options\": {\n    \"temperature\": 0.0,\n    \"num_predict\": 20\n  },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Return ONLY JSON with key 'intent' (consultation|emergency|other). Do not write any thoughts, reasoning, or markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Analyze: {{ $json.masked_text }}\"\n    }\n  ]\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
-      "position": [
-        624,
-        0
-      ],
+      "position": [624, 0],
       "id": "3e6492e8-5753-4d30-8267-0fa48e17fb78",
       "name": "HTTP Request"
     },
@@ -84,10 +70,7 @@
       },
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
-      "position": [
-        1040,
-        0
-      ],
+      "position": [1040, 0],
       "id": "2b1f4dc1-ebac-4618-a0a7-4e8f4268e621",
       "name": "Guardrail Router"
     },
@@ -98,46 +81,17 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        832,
-        0
-      ],
+      "position": [832, 0],
       "id": "14b4ff6a-ea68-4916-a0f6-8109863d0ac5",
       "name": "Data parser + joiner"
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "0dc9222c-5049-4f48-81a4-dc6445ee6781",
-              "name": "text",
-              "value": "Здравствуйте! Подскажите, пожалуйста, какой график работы спецЦОНа в Астане и нужно ли бронировать очередь заранее?",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        208,
-        0
-      ],
-      "id": "1f6cd1a5-ef71-49dc-a798-00c4bbea3447",
-      "name": "Message"
-    },
-    {
-      "parameters": {
-        "jsCode": "const text = $json.text || '';\n\n// 1. Валидация контрольного разряда ИИН РК (модуль 11)\nfunction validateIIN(iin) {\n  if (!/^\\d{12}$/.test(iin)) return false;\n  \n  const digits = iin.split('').map(Number);\n  const w1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1];\n  const w2 = [3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2];\n\n  let s = digits.slice(0, 11).reduce((acc, d, i) => acc + d * w1[i], 0) % 11;\n  if (s < 10) return s === digits[11];\n\n  s = digits.slice(0, 11).reduce((acc, d, i) => acc + d * w2[i], 0) % 11;\n  if (s < 10) return s === digits[11];\n\n  return false;\n}\n\n// 2. Хранилище подстановок\nconst piiMap = {};\nlet iinCounter = 1;\nlet phoneCounter = 1;\nlet emailCounter = 1;\n\nlet maskedText = text;\n\n// 3. Маскирование ИИН\nmaskedText = maskedText.replace(/\\b\\d{12}\\b/g, (match) => {\n  if (validateIIN(match)) {\n    const placeholder = `<IIN_${iinCounter++}>`;\n    piiMap[placeholder] = match;\n    return placeholder;\n  }\n  return match;\n});\n\n// 4. Маскирование номеров телефонов (+7, 8)\nconst phonePattern = /(?:\\+?7|8)[\\s\\-]?(?:\\(?\\d{3}\\)?)[\\s\\-]?\\d{3}[\\s\\-]?\\d{2}[\\s\\-]?\\d{2}/g;\nmaskedText = maskedText.replace(phonePattern, (match) => {\n  const placeholder = `<PHONE_${phoneCounter++}>`;\n  piiMap[placeholder] = match.trim();\n  return placeholder;\n});\n\n// 5. Маскирование Email\nconst emailPattern = /[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+/g;\nmaskedText = maskedText.replace(emailPattern, (match) => {\n  const placeholder = `<EMAIL_${emailCounter++}>`;\n  piiMap[placeholder] = match;\n  return placeholder;\n});\n\n// 6. Fast-Path: проверка экстренных слов\nconst emergencyKeywords = ['пожар', 'взятка', 'прокуратура', 'сервер лежит', 'утечка базы'];\nconst lowerText = text.toLowerCase();\nconst detectedTrigger = emergencyKeywords.find(word => lowerText.includes(word));\n\nreturn {\n  original_text: text,\n  masked_text: maskedText,\n  pii_map: piiMap,\n  is_emergency_fastpath: Boolean(detectedTrigger),\n  emergency_keyword: detectedTrigger || null,\n  processed_at: new Date().toISOString()\n};"
+        "jsCode": "// 1. Извлекаем текст и chat_id из Telegram (с fallback на ручной тест)\nconst messageObj = $json.message || {};\nconst text = messageObj.text || $json.text || '';\nconst chatId = messageObj.chat?.id || null;\n\n// 2. Валидация контрольного разряда ИИН РК (модуль 11)\nfunction validateIIN(iin) {\n  if (!/^\\d{12}$/.test(iin)) return false;\n  \n  const digits = iin.split('').map(Number);\n  const w1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1];\n  const w2 = [3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2];\n\n  let s = digits.slice(0, 11).reduce((acc, d, i) => acc + d * w1[i], 0) % 11;\n  if (s < 10) return s === digits[11];\n\n  s = digits.slice(0, 11).reduce((acc, d, i) => acc + d * w2[i], 0) % 11;\n  if (s < 10) return s === digits[11];\n\n  return false;\n}\n\n// 3. Хранилище подстановок\nconst piiMap = {};\nlet iinCounter = 1;\nlet phoneCounter = 1;\nlet emailCounter = 1;\n\nlet maskedText = text;\n\n// Маскирование ИИН\nmaskedText = maskedText.replace(/\\b\\d{12}\\b/g, (match) => {\n  if (validateIIN(match)) {\n    const placeholder = `<IIN_${iinCounter++}>`;\n    piiMap[placeholder] = match;\n    return placeholder;\n  }\n  return match;\n});\n\n// Маскирование телефонов (+7, 8)\nconst phonePattern = /(?:\\+?7|8)[\\s\\-]?(?:\\(?\\d{3}\\)?)[s\\-]?[0-9]{3}[\\s\\-]?[0-9]{2}[\\s\\-]?[0-9]{2}/g;\nmaskedText = maskedText.replace(phonePattern, (match) => {\n  const placeholder = `<PHONE_${phoneCounter++}>`;\n  piiMap[placeholder] = match.trim();\n  return placeholder;\n});\n\n// Маскирование Email\nconst emailPattern = /[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+/g;\nmaskedText = maskedText.replace(emailPattern, (match) => {\n  const placeholder = `<EMAIL_${emailCounter++}>`;\n  piiMap[placeholder] = match;\n  return placeholder;\n});\n\n// 4. Fast-Path аварийных триггеров\nconst emergencyKeywords = ['пожар', 'взятка', 'прокуратура', 'сервер лежит', 'утечка базы'];\nconst lowerText = text.toLowerCase();\nconst detectedTrigger = emergencyKeywords.find(word => lowerText.includes(word));\n\nreturn {\n  original_text: text,\n  masked_text: maskedText,\n  pii_map: piiMap,\n  is_emergency_fastpath: Boolean(detectedTrigger),\n  emergency_keyword: detectedTrigger || null,\n  chat_id: chatId, // сохраняем для обратной отправки\n  processed_at: new Date().toISOString()\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        416,
-        0
-      ],
+      "position": [416, 0],
       "id": "0c0b6fcf-57ff-4c8b-a96e-cce70163143f",
       "name": "Input Data Validation"
     },
@@ -148,10 +102,7 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        1216,
-        -224
-      ],
+      "position": [1216, -224],
       "id": "0d494d0c-1388-4768-97c0-f153fe221c09",
       "name": "Format Escalation Ticket"
     },
@@ -166,25 +117,19 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
-      "position": [
-        1248,
-        96
-      ],
+      "position": [1248, 96],
       "id": "d4c7a751-c185-41f9-aabb-a0d54a7de7ab",
       "name": "BGE-M3 Embeddings"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT \n  id,\n  service_code,\n  title,\n  section,\n  content,\n  ROUND((embedding <=> '{{ \"[\" + $json.embedding.join(\",\") + \"]\" }}'::vector)::numeric, 4) AS cosine_distance\nFROM gov_regulations\nORDER BY embedding <=> '{{ \"[\" + $json.embedding.join(\",\") + \"]\" }}'::vector ASC\nLIMIT 2;",
+        "query": "SELECT \n  id,\n  service_code,\n  title,\n  section,\n  content,\n  ROUND((embedding <=> '{{ \"[\" + $json.embedding.join(\",\") + \"]\" }}'::vector)::numeric, 4) AS cosine_distance\nFROM gov_regulations\nORDER BY embedding <=> '{{ \"[\" + $json.embedding.join(\",\") + \"]\" }}'::vector ASC\nLIMIT 1;",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [
-        1440,
-        96
-      ],
+      "position": [1440, 96],
       "id": "0325a883-ac0f-477e-a441-4f232ae891ed",
       "name": "Retrieve Knowledge (pgvector)",
       "credentials": {
@@ -200,32 +145,78 @@
         "url": "http://ollama:11434/api/chat",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"qwen3.5:9b\",\n  \"stream\": false,\n  \"options\": {\n    \"temperature\": 0.2\n  },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Ты — официальный AI-консультант электронного правительства Республики Казахстан. Твоя задача — предоставить гражданину точный, вежливый и структурированный ответ на основе предоставленного официального регламента.\\n\\nПРАВИЛА:\\n1. Опирайся ИСКЛЮЧИТЕЛЬНО на факты из блока «РЕГЛАМЕНТ». Не придумывай ничего от себя.\\n2. В конце ответа обязательно укажи официальный источник в формате: «Источник: [Название регламента — Раздел]».\\n3. Если в регламенте нет прямого ответа на часть вопроса, честно сообщи об этом.\\n4. Отвечай на том же языке, на котором задан вопрос (русский/казахский).\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"РЕГЛАМЕНТ:\\nНазвание: {{ $json.title }}\\nРаздел: {{ $json.section }}\\nТекст: {{ $json.content }}\\n\\nВОПРОС ГРАЖДАНИНА:\\n{{ $('Data parser + joiner').first().json.masked_text }}\"\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"model\": \"qwen3.5:9b\",\n  \"stream\": false,\n  \"options\": {\n    \"temperature\": 0.1,\n    \"num_predict\": 1200\n  },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Ты — официальный виртуальный консультант портала электронного правительства Республики Казахстан. Твоя задача — предоставить точный, структурированный ответ строго на основе предоставленного РЕГЛАМЕНТА. Не придумывай информацию от себя. Начинай ответ сразу с приветствия. В конце укажи первоисточник в формате: «Источник: [Название регламента] — [Раздел]». Если ответа в регламенте нет, вежливо сообщи об этом и порекомендуй обратиться в Единый контакт-центр 1414.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"РЕГЛАМЕНТ:\\n{{ $json.content }}\\n\\nВОПРОС ГРАЖДАНИНА: {{ $('Input Data Validation').first().json.masked_text }}\"\n    }\n  ]\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
-      "position": [
-        1648,
-        96
-      ],
+      "position": [1648, 96],
       "id": "739b7509-c1e5-4fca-8f71-b6ca2c2808ad",
       "name": "RAG Consultant (Qwen)"
+    },
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [208, 0],
+      "id": "1f2ed7fd-efbb-4042-9b79-cd170962faa2",
+      "name": "Telegram Trigger",
+      "webhookId": "e3c91d46-56c2-46da-981f-7b60f8cbc231",
+      "credentials": {
+        "telegramApi": {
+          "id": "A9EvK0EaWOxHkl6J",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Input Data Validation').first().json.chat_id }}",
+        "text": "={{ $json.citizen_reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1424, -224],
+      "id": "eb37b446-ae7b-42ed-9066-b35123adb92c",
+      "name": "Send Escalation Notice",
+      "webhookId": "cb0f1df9-4e2f-4286-87bc-0b69478097e6",
+      "credentials": {
+        "telegramApi": {
+          "id": "A9EvK0EaWOxHkl6J",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Input Data Validation').first().json.chat_id }}",
+        "text": "={{ $json.message.content || 'К сожалению, не удалось сформировать ответ по регламенту. Пожалуйста, обратитесь в Единый контакт-центр по номеру 1414.' }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1856, 96],
+      "id": "fdbbfe5b-58a6-4e1d-8e44-2a4771b4825d",
+      "name": "Send Citizen Reply (RAG)",
+      "webhookId": "c3d4b9fc-dfd6-4098-b552-3465a1fcfda6",
+      "credentials": {
+        "telegramApi": {
+          "id": "A9EvK0EaWOxHkl6J",
+          "name": "Telegram account"
+        }
+      }
     }
   ],
   "pinData": {},
   "connections": {
-    "When clicking ‘Execute workflow’": {
-      "main": [
-        [
-          {
-            "node": "Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "HTTP Request": {
       "main": [
         [
@@ -242,17 +233,6 @@
         [
           {
             "node": "Guardrail Router",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Message": {
-      "main": [
-        [
-          {
-            "node": "Input Data Validation",
             "type": "main",
             "index": 0
           }
@@ -309,6 +289,39 @@
           }
         ]
       ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Input Data Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Consultant (Qwen)": {
+      "main": [
+        [
+          {
+            "node": "Send Citizen Reply (RAG)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Escalation Ticket": {
+      "main": [
+        [
+          {
+            "node": "Send Escalation Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -316,7 +329,7 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "6c66e2a6-f87d-4c0a-9f69-e942a2a45b0f",
+  "versionId": "24cc3dec-366d-4623-b441-c6c3792ad7d2",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "bd9697127b6185ef445ec695741d54795e063b1ce0fa7500bd18a2e52f97e1ef"

@@ -1,25 +1,28 @@
-Write-Host "==> 1. Checking unvectorized records in PostgreSQL..." -ForegroundColor Cyan
+# Принудительно выставляем UTF-8 для всех потоков сессии
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Fetch IDs without embeddings
+Write-Host "==> Checking unvectorized records..." -ForegroundColor Cyan
+
 $ids = @(docker exec -i govtech_postgres psql -U postgres -d govtech_db -t -A -c "SELECT id FROM gov_regulations WHERE embedding IS NULL ORDER BY id ASC;") | 
     ForEach-Object { $_.Trim() } | 
     Where-Object { $_ -match '^\d+$' }
 
 if ($ids.Count -eq 0) {
-    Write-Host "All records are already vectorized." -ForegroundColor Green
+    Write-Host "All records already have embeddings." -ForegroundColor Green
     exit
 }
 
-Write-Host "Records pending vectorization: $($ids.Count)" -ForegroundColor Yellow
-
 foreach ($id in $ids) {
-    Write-Host "Vectorizing record ID $id..." -NoNewline
-
-    # Extract regulation text
+    # Читаем текст статьи
     $text = docker exec -i govtech_postgres psql -U postgres -d govtech_db -t -A -c "SELECT title || '. ' || content FROM gov_regulations WHERE id = $id;"
     $cleanText = ($text | Out-String).Trim()
 
-    # Build Ollama payload
+    # Контрольный вывод первых 45 символов
+    $preview = $cleanText.Substring(0, [Math]::Min(45,$cleanText.Length))
+    Write-Host "ID $id [$preview...] " -NoNewline
+
     $payload = @{
         model = "bge-m3"
         prompt = $cleanText
@@ -35,16 +38,12 @@ foreach ($id in $ids) {
 
         if ($response.embedding -and $response.embedding.Count -gt 0) {
             $vectorString = "[" + ($response.embedding -join ",") + "]"
-            
-            # Save embedding to PostgreSQL
             docker exec -i govtech_postgres psql -U postgres -d govtech_db -c "UPDATE gov_regulations SET embedding = '$vectorString' WHERE id = $id;" | Out-Null
-            Write-Host " [OK] ($($response.embedding.Count) dims)" -ForegroundColor Green
-        } else {
-            Write-Host " [FAILED: empty vector]" -ForegroundColor Red
+            Write-Host "[OK]" -ForegroundColor Green
         }
     } catch {
-        Write-Host " [ERROR: $($_.Exception.Message)]" -ForegroundColor Red
+        Write-Host "[ERR: $($_.Exception.Message)]" -ForegroundColor Red
     }
 }
 
-Write-Host "`n==> Knowledge base successfully initialized with bge-m3 embeddings!" -ForegroundColor Yellow
+Write-Host "`n==> Re-indexing finished." -ForegroundColor Yellow
