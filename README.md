@@ -190,6 +190,8 @@ webhook-запросов на
 Канал заявителя `Telegram Bot API` Получение сообщений и
 отправка ответов
 
+Скрипты и ETL `Python 3` Векторизация базы знаний (Seeding) и служебные утилиты
+
 Контейнеризация Docker Compose v2 Запуск инфраструктуры
 
 ---
@@ -327,6 +329,8 @@ GPU NVIDIA GPU; рекомендуемый минимум
 Драйверы Совместимые драйверы NVIDIA/CUDA
 для выбранного окружения
 
+Среда Python Python 3.10+ (для запуска seed.py)
+
 Утилиты `cloudflared` CLI
 
 Сервисы Ollama, PostgreSQL 16 с `pgvector`,
@@ -406,11 +410,17 @@ docker exec -i govtech_postgres psql -U postgres -d govtech_db -v ON_ERROR_STOP=
 
 ### 5. Рассчитайте embeddings
 
-Запустите скрипт заполнения векторных представлений:
+Установите зависимости и запустите скрипт заполнения векторных представлений:
 
-```powershell
-.\scripts\seed.ps1
+```bash
+pip install -r requirements.txt
+python ./scripts/seed.py
 ```
+
+> 💡 **Альтернатива:** Если вы работаете исключительно в Windows PowerShell, доступен исходный скрипт:
+> ```powershell
+> .\scripts\seed.ps1
+> ```
 
 Ожидается, что скрипт использует локальную модель `bge-m3` и сохраняет
 векторы размерности 1024 в таблицу `gov_regulations` либо в структуру,
