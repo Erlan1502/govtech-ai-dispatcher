@@ -476,7 +476,7 @@ docker compose logs --tail=100 ollama
 **Ожидаемый маршрут**
 
 `Telegram Trigger` → `Input Data Validation` → `BGE-M3 Embeddings` →
-`Retrieve Knowledge (pgvector)` → `RAG Consultant (Qwen)` →
+`Retrieve Knowledge (pgvector)` → `Prepare RAG Context` → `RAG Consultant (Qwen)` →
 `Send Citizen Reply`
 
 **Ожидаемое поведение**

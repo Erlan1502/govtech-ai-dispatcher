@@ -124,7 +124,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT \n  id,\n  service_code,\n  title,\n  section,\n  content,\n  ROUND((embedding <=> '{{ \"[\" + $json.embedding.join(\",\") + \"]\" }}'::vector)::numeric, 4) AS cosine_distance\nFROM gov_regulations\nORDER BY embedding <=> '{{ \"[\" + $json.embedding.join(\",\") + \"]\" }}'::vector ASC\nLIMIT 1;",
+        "query": "SELECT \n  id,\n  service_code,\n  title,\n  section,\n  content,\n  ROUND((embedding <=> '{{ \"[\" + $json.embedding.join(\",\") + \"]\" }}'::vector)::numeric, 4) AS distance\nFROM gov_regulations\nWHERE (embedding <=> '{{ \"[\" + $json.embedding.join(\",\") + \"]\" }}'::vector) < 0.45\nORDER BY distance ASC\nLIMIT 3;",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -132,6 +132,7 @@
       "position": [1440, 96],
       "id": "0325a883-ac0f-477e-a441-4f232ae891ed",
       "name": "Retrieve Knowledge (pgvector)",
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
           "id": "acC6ASNwskveiRIr",
@@ -141,16 +142,26 @@
     },
     {
       "parameters": {
+        "jsCode": "// Если база ничего не вернула по порогу дистанции (< 0.45)\nif (!$input.all().length || !$input.first().json.content) {\n  return [{\n    json: {\n      has_context: false,\n      context_text: \"ИНФОРМАЦИЯ В БАЗЕ РЕГЛАМЕНТОВ НЕ НАЙДЕНА.\",\n      sources: []\n    }\n  }];\n}\n\n// Склеиваем все найденные фрагменты в один структурированный блок\nconst items = $input.all();\nconst contextBlocks = items.map((item, idx) => {\n  const d = item.json;\n  return `--- Документ [${idx + 1}]: ${d.title} (${d.section}) ---\\n${d.content}`;\n});\n\nconst sources = items.map(item => `${item.json.title} — ${item.json.section}`);\n\nreturn [{\n  json: {\n    has_context: true,\n    context_text: contextBlocks.join(\"\\n\\n\"),\n    sources: [...new Set(sources)] // убираем дубликаты источников\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1648, 96],
+      "id": "5c34e76a-9f5b-4c48-8df1-2d7c0419e7a2",
+      "name": "Prepare RAG Context"
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "http://ollama:11434/api/chat",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"qwen3.5:9b\",\n  \"stream\": false,\n  \"think\": false,\n  \"options\": {\n    \"temperature\": 0.1,\n    \"num_predict\": 1200\n  },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Ты — официальный виртуальный консультант портала электронного правительства Республики Казахстан. Твоя задача — предоставить точный, структурированный ответ строго на основе предоставленного РЕГЛАМЕНТА. Не придумывай информацию от себя. Начинай ответ сразу с приветствия. В конце укажи первоисточник в формате: «Источник: Название регламента — Раздел». Если ответа в регламенте нет, вежливо сообщи об этом и порекомендуй обратиться в Единый контакт-центр 1414. Оформляй списки через дефис (-), не используй символы * для маркеров и квадратные скобки.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"РЕГЛАМЕНТ:\\n{{ $json.content }}\\n\\nВОПРОС ГРАЖДАНИНА: {{ $('Input Data Validation').first().json.masked_text }}\"\n    }\n  ]\n}",
+        "jsonBody": "={\n  \"model\": \"qwen3.5:9b\",\n  \"stream\": false,\n  \"think\": false,\n  \"options\": {\n    \"temperature\": 0.1,\n    \"num_predict\": 1200\n  },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Ты — виртуальный консультант eGov.kz. Твоя задача — ответить на вопрос гражданина СТРОГО на основе предоставленных регламентов.\\n\\nКОНТЕКСТ РЕГЛАМЕНТОВ:\\n{{ $json.context_text }}\\n\\nПРАВИЛА ОТВЕТА:\\n1. Если информации в переданных регламентах недостаточно или она отсутствует, напиши: \\n   \\\"К сожалению, в базе регламентов нет точной информации по вашему вопросу. Рекомендуем обратиться в единый контакт-центр по номеру 1414.\\\"\\n2. Если в контексте есть данные из нескольких регламентов, объедини их в четкий пошаговый ответ.\\n3. В конце ответа укажи список первоисточников в формате:\\n   Источники:\\n   - [Название документа] — [Раздел]\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"ВОПРОС ГРАЖДАНИНА: {{ $('Input Data Validation').first().json.masked_text }}\"\n    }\n  ]\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
-      "position": [1648, 96],
+      "position": [1856, 96],
       "id": "739b7509-c1e5-4fca-8f71-b6ca2c2808ad",
       "name": "RAG Consultant (Qwen)"
     },
@@ -203,7 +214,7 @@
       },
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1856, 96],
+      "position": [2064, 96],
       "id": "fdbbfe5b-58a6-4e1d-8e44-2a4771b4825d",
       "name": "Send Citizen Reply (RAG)",
       "webhookId": "c3d4b9fc-dfd6-4098-b552-3465a1fcfda6",
@@ -280,6 +291,17 @@
       ]
     },
     "Retrieve Knowledge (pgvector)": {
+      "main": [
+        [
+          {
+            "node": "Prepare RAG Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare RAG Context": {
       "main": [
         [
           {
